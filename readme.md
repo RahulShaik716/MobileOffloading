@@ -1,8 +1,11 @@
+
+APK file is provided in the zip folder named (app-debug.apk) . Download and install it on device directly
+
 To run the Android application as a Master or Slave, follow these steps:
 
 Running as Master:
 
-Install the application on your Android device using the provided APK file (follow the previous instructions).
+Install the application on your Android device using the provided APK file.
 
 Launch the application by tapping on its icon.
 
@@ -24,7 +27,7 @@ The execution times and results will be displayed on the screen.
 
 Running as Slave:
 
-Install the application on your Android device using the provided APK file (follow the previous instructions).
+Install the application on your Android device using the provided APK file.
 
 Launch the application by tapping on its icon.
 
