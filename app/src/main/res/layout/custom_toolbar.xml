@@ -1,0 +1,35 @@
+<androidx.appcompat.widget.Toolbar
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/customToolbar"
+    android:layout_width="match_parent"
+    android:layout_height="?attr/actionBarSize"
+    android:elevation="4dp"
+    android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
+    android:popupTheme="@style/ThemeOverlay.AppCompat.DayNight.ActionBar"
+    android:contentInsetStart="0dp"
+    android:contentInsetEnd="0dp"
+    >
+
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <ImageView
+            android:id="@+id/backButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:padding="12dp"
+            android:contentDescription="back" />
+
+        <TextView
+            android:id="@+id/titleText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerInParent="true"
+            android:textSize="20sp"
+            android:text="Activity Title" />
+
+    </RelativeLayout>
+
+</androidx.appcompat.widget.Toolbar>

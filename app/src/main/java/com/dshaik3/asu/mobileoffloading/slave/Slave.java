@@ -16,19 +16,25 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.BatteryManager;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
 import androidx.core.content.ContextCompat;
 
 import com.dshaik3.asu.mobileoffloading.DeviceHolder;
 import com.dshaik3.asu.mobileoffloading.R;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
@@ -68,6 +74,8 @@ public class Slave extends AppCompatActivity {
     private ObjectOutputStream objectOutputStream;
 
     boolean master_request = false;
+
+    private boolean isRunning = true;
     @SuppressLint("MissingPermission")
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -81,6 +89,25 @@ public class Slave extends AppCompatActivity {
         battery = findViewById(R.id.textView9);
         Monitor = findViewById(R.id.button5);
 
+        //
+
+        Toolbar toolbar = findViewById(R.id.customToolbar);
+        setSupportActionBar(toolbar);
+
+        // Set the title
+        getSupportActionBar().setDisplayShowTitleEnabled(false);
+        TextView titleText = toolbar.findViewById(R.id.titleText);
+        titleText.setText("Slave");
+
+        // Handle back button click
+        ImageView backButton = toolbar.findViewById(R.id.backButton);
+        backButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onBackPressed();
+            }
+        });
+        //
         // Initialize Bluetooth adapter
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         if (bluetoothAdapter == null) {
@@ -135,33 +162,36 @@ public class Slave extends AppCompatActivity {
             try {
                 socket = serverSocket.accept();
                 if(socket!=null) {
+                    outputStream = socket.getOutputStream();
                     inputStream = socket.getInputStream();
-                    if(inputStream!=null) {
-                       objectInputStream = new ObjectInputStream(inputStream);
-                        HashMap<String, Object> receivedKeyValuePairs = (HashMap<String, Object>) objectInputStream.readObject();
-                        if(receivedKeyValuePairs.containsKey("request"))
-                        {
-                            master_request = true;
-                            send_monitor();
-                        }
-                        else {
-                            int[] row2 = (int[]) receivedKeyValuePairs.get("row2");
-                            int[][] matrix2 = (int[][]) receivedKeyValuePairs.get("matrix2");
-                            Log.i("row2", row2.toString());
-                            Log.i("matrix2", DeviceHolder.ArrayToString(matrix2));
-                            //compute row2 in slave ..
-                            long start_time = System.currentTimeMillis();
-                            for (int i = 0; i < 2; i++) {
-                                int sum = 0;
-                                for (int j = 0; j < 2; j++) {
-                                    sum += row2[j] * matrix2[j][i];
+                    objectOutputStream = new ObjectOutputStream(outputStream);
+                    objectInputStream = new ObjectInputStream(inputStream);
+                    while(isRunning && socket!=null) {
+                        if (objectInputStream.available() != -1) {
+
+                            HashMap<String, Object> receivedKeyValuePairs = (HashMap<String, Object>) objectInputStream.readObject();
+                            if (receivedKeyValuePairs.containsKey("request")) {
+                                master_request = true;
+                                send_monitor();
+                            } else {
+                                int[] row2 = (int[]) receivedKeyValuePairs.get("row2");
+                                int[][] matrix2 = (int[][]) receivedKeyValuePairs.get("matrix2");
+                                Log.i("row2", row2.toString());
+                                Log.i("matrix2", DeviceHolder.ArrayToString(matrix2));
+                                //compute row2 in slave ..
+                                long start_time = System.nanoTime();
+                                for (int i = 0; i < 2; i++) {
+                                    int sum = 0;
+                                    for (int j = 0; j < 2; j++) {
+                                        sum += row2[j] * matrix2[j][i];
+                                    }
+                                    result[i] = sum;
                                 }
-                                result[i] = sum;
+                                long end_time = System.nanoTime();
+                                execution_time = end_time - start_time;
+                                //send it back to master..
+                                sendToMaster();
                             }
-                            long end_time = System.currentTimeMillis();
-                            execution_time = end_time - start_time;
-                            //send it back to master..
-                            sendToMaster();
                         }
                     }
                 }
@@ -179,8 +209,7 @@ public class Slave extends AppCompatActivity {
             @Override
             public void run() {
                 try {
-                    outputStream = socket.getOutputStream();
-                    objectOutputStream = new ObjectOutputStream(outputStream);
+
                     HashMap data = new HashMap<>();
                     data.put("row2",result);
                     data.put("slave_exe",execution_time);
@@ -212,7 +241,6 @@ public class Slave extends AppCompatActivity {
                 Method removeBondMethod = bondedDevice.getClass().getMethod("removeBond");
                 removeBondMethod.invoke(bondedDevice);
                 socket.close();
-                socket = null;
             } catch (IOException e) {
                 Log.e(TAG, "Error closing Bluetooth socket", e);
             } catch (InvocationTargetException e) {
@@ -240,7 +268,7 @@ public class Slave extends AppCompatActivity {
             }
             outputStream = null;
         }
-
+       unregisterBatteryReceiver();
     }
 
     // Code for the slave activity
@@ -254,7 +282,7 @@ public class Slave extends AppCompatActivity {
         // Check if location permissions are granted
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             // Request location updates
-            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0, locationListener);
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 10000, 1, locationListener);
         } else {
             // Location permission not granted, handle accordingly
         }
@@ -305,8 +333,8 @@ public class Slave extends AppCompatActivity {
         String message = "Location Update: " + currentLocation;
         location.setText(message);
         // Send the message to the requester using Bluetooth communication
-//        if(master_request)
-//            send_monitor();
+        if(master_request)
+        send_monitor();
     }
 
     // Method to send battery percentage update to the requester
@@ -316,8 +344,8 @@ public class Slave extends AppCompatActivity {
         battery.setText(message);
         // Send the message to the requester using Bluetooth communication
         // ...
-//        if(master_request)
-//            send_monitor();
+        if(master_request)
+        send_monitor();
     }
 
 
@@ -327,15 +355,14 @@ public class Slave extends AppCompatActivity {
             @Override
             public void run() {
                 try {
-                    outputStream = null;
-                    outputStream = socket.getOutputStream();
-                    objectOutputStream = new ObjectOutputStream(outputStream);
-                    HashMap data = new HashMap<>();
-                    data.put("location",currentLocation);
-                    data.put("battery",currentBatteryPercentage);
-                    objectOutputStream.writeObject(data);
-                    objectOutputStream.flush();
-
+                    if(socket!=null) {
+                        HashMap data = new HashMap<>();
+                        data.put("location", currentLocation);
+                        data.put("battery", currentBatteryPercentage);
+                        objectOutputStream.writeObject(data);
+                        objectOutputStream.flush();
+                        Log.i("slave", "sent");
+                    }
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
@@ -343,4 +370,7 @@ public class Slave extends AppCompatActivity {
         });
         send.start();
     }
+
+
+
 }

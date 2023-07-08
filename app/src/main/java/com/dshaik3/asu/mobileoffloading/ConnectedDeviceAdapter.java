@@ -13,7 +13,7 @@ import com.dshaik3.asu.mobileoffloading.master.Master;
 
 import java.util.List;
 
-public class MyAdapter extends ArrayAdapter<Device> {
+public class ConnectedDeviceAdapter extends ArrayAdapter<Device> {
     private Context mContext;
     private int mLayout;
     private List<Device>mList;
@@ -24,7 +24,7 @@ public class MyAdapter extends ArrayAdapter<Device> {
         TextView Address;
 
     }
-    public MyAdapter(Context context, int resource, List<Device> mDevices) {
+    public ConnectedDeviceAdapter(Context context, int resource, List<Device> mDevices) {
         super(context, resource,mDevices);
         this.mContext = context;
         this.mLayout = resource;
@@ -57,6 +57,13 @@ public class MyAdapter extends ArrayAdapter<Device> {
         }
         viewHolder.Name.setText(device.getName());
         viewHolder.Address.setText(device.getAddress());
+        result.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Log.i("adapter","clicked");
+                ((Master)mContext).Connect(device);
+            }
+        });
         return result;
     }
 }

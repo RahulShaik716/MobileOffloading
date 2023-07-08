@@ -9,6 +9,7 @@ public class Device {
     private String Name;
     private String Address;
     private BluetoothDevice BDevice;
+
     public Device(@Nullable String name, String address,BluetoothDevice BDevice)
     {
         if(name == null)

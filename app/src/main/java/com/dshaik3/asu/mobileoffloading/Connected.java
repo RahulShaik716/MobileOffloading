@@ -1,19 +1,29 @@
 package com.dshaik3.asu.mobileoffloading;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
 import androidx.recyclerview.widget.RecyclerView;
 
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
+import android.content.Intent;
 import android.os.Bundle;
+import android.os.Environment;
+import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import com.dshaik3.asu.mobileoffloading.master.Master;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
@@ -21,6 +31,7 @@ import java.io.ObjectOutputStream;
 import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.Date;
 import java.util.HashMap;
 
 public class Connected extends AppCompatActivity {
@@ -35,7 +46,8 @@ private OutputStream outputStream = null;
 
 private InputStream inputStream = null;
 
-private ObjectInputStream objectInputStream;
+private   ObjectInputStream objectInputStream = null;
+private   ObjectOutputStream objectOutputStream = null;
 private     int [][] result  = new int[2][2];
 
 private TextView MatrixResult;
@@ -44,7 +56,20 @@ private TextView S_exec_time;
 
 private TextView Battery;
 private TextView Location;
+
+private TextView LogText;
 long slave_exec ;
+long exec_time;
+//3 threads
+    private  Thread ConnectThread;
+    private Thread SendThread;
+    private Thread MonitorThread;
+    private Thread ComputeThread;
+
+    private Button Connect;
+    private Button Monitor;
+    private Button SendData;
+    private boolean isRunning = true;
 @Override
 protected void onCreate(Bundle savedInstanceState) {
 super.onCreate(savedInstanceState);
@@ -52,25 +77,39 @@ setContentView(R.layout.activity_connected);
 
 TextView Name = (TextView) findViewById(R.id.textView4);
 TextView Address = (TextView) findViewById(R.id.textView5);
-Button Connect = (Button) findViewById(R.id.button2);
+Connect = (Button) findViewById(R.id.button2);
 Button BDisconnect = (Button)findViewById(R.id.button3);
-Button SendData = (Button)findViewById(R.id.button4);
+SendData = (Button)findViewById(R.id.button4);
 MatrixResult = findViewById(R.id.textView6);
 M_exec_time = findViewById(R.id.textView10);
 S_exec_time = findViewById(R.id.textView11);
-Button Monitor = findViewById(R.id.button6);
+Monitor = findViewById(R.id.button6);
 Battery = findViewById(R.id.textView12);
 Location = findViewById(R.id.textView13);
-
+LogText = findViewById(R.id.textView14);
+LogText.setMovementMethod(new ScrollingMovementMethod());
 Name.setText(device.getName());
 Address.setText(device.getAddress());
 
-Connect.setOnClickListener(new View.OnClickListener() {
-@Override
-public void onClick(View v) {
-new Thread(new ConnectThread()).start();
-}
-});
+//
+    Toolbar toolbar = findViewById(R.id.customToolbar);
+    setSupportActionBar(toolbar);
+
+    // Set the title
+    getSupportActionBar().setDisplayShowTitleEnabled(false);
+    TextView titleText = toolbar.findViewById(R.id.titleText);
+    titleText.setText("Master");
+
+    // Handle back button click
+    ImageView backButton = toolbar.findViewById(R.id.backButton);
+    backButton.setOnClickListener(new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            onBackPressed();
+        }
+    });
+    //
+connect();
 BDisconnect.setOnClickListener(new View.OnClickListener() {
 @Override
 public void onClick(View v) {
@@ -92,6 +131,7 @@ Monitor.setOnClickListener(new View.OnClickListener() {
         data.put("request",true);
         sendDataToSlave(data);
         startListening();
+        Monitor.setEnabled(false);
     }
 });
 
@@ -103,79 +143,117 @@ private void startListening()
         @Override
         public void run() {
             try {
-                if(inputStream!=null)
-                    inputStream.close();
+                while (isRunning && socket!=null) {
+                    if (inputStream == null && socket!=null) {
+                        inputStream = socket.getInputStream();
+                        objectInputStream = new ObjectInputStream(inputStream);
+                    }
+                    if(objectInputStream.available() != -1 && socket!=null)
+                    {
+                    HashMap received = (HashMap) objectInputStream.readObject();
+                    if (received.containsKey("battery")) {
+                        String location = (String) received.get("location");
+                        int battery = (int) received.get("battery");
+                        writeLogToFile(device.getName());
+                        writeLogToFile("battery percentage :" + battery + "%");
+                        writeLogToFile("Location of the slave is : " + location);
+                        writeLogToFile("Timestamp:"+new Date(System.currentTimeMillis()));
+                        writeLogToFile("\n");
 
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                Battery.setText("battery percentage :" + battery + "%");
+                                Location.setText("Location of the slave is : " + location);
+                                LogText.setText(readLogFile());
+                            }
+                        });
+                    }
+                    if (received.containsKey("row2")) {
+                        result[1] = (int[]) received.get("row2");
+                        slave_exec = (long) received.get("slave_exe");
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                MatrixResult.setText(DeviceHolder.ArrayToString(result));
+                                M_exec_time.setText(exec_time + "  nano seconds");
+                                S_exec_time.setText(slave_exec + " nano seconds");
+                            }
+                        });
 
-                inputStream = socket.getInputStream();
-                objectInputStream = new ObjectInputStream(inputStream);
-                //need to have a condition
-                HashMap received = (HashMap) objectInputStream.readObject();
-                    String location = (String) received.get("location");
-                    int battery = (int) received.get("battery");
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            Battery.setText("battery percentage :"+battery+"%");
-                            Location.setText("Location of the slave is : "+location);
-                        }
-                    });
-
-            }
-            catch (IOException e) {
-                throw new RuntimeException(e);
-            } catch (ClassNotFoundException e) {
-                throw new RuntimeException(e);
-            }
+                    }   }
+                }
+                }
+            catch(IOException e){
+                     if(!socket.isConnected())
+                     {
+                       socket = null;
+                       Intent intent = new Intent(Connected.this, Master.class);
+                       startActivity(intent);
+                     }
+                     else
+                    throw new RuntimeException(e);
+                } catch(ClassNotFoundException e){
+                    throw new RuntimeException(e);
+                }
         }
-        });
+    });
+
     listen.start();
-}
-private class  ConnectThread implements Runnable{
 
-@SuppressLint("MissingPermission")
-@Override
-public void run() {
-
-try {
- socket = device.getDevice().createRfcommSocketToServiceRecord(UUID);
- if(Bdevice.getBondState() != BluetoothDevice.BOND_BONDED)
- {
-     Method method = Bdevice.getClass().getMethod("createBond");
-     method.invoke(Bdevice);
- }
- socket.connect();
-} catch (IOException e) {
- throw new RuntimeException(e);
-} catch (InvocationTargetException e) {
- throw new RuntimeException(e);
-} catch (NoSuchMethodException e) {
- throw new RuntimeException(e);
-} catch (IllegalAccessException e) {
- throw new RuntimeException(e);
-}
-}
 }
 
-private void sendDataToSlave(HashMap data)
+private void connect()
 {
-try {
+ ConnectThread = new Thread(new Runnable() {
+     @SuppressLint("MissingPermission")
+     @Override
+     public void run() {
+         try {
+             socket = Bdevice.createRfcommSocketToServiceRecord(UUID);
+             socket.connect();
+             Log.i("connected","woo");
+         } catch (IOException e) {
+             throw new RuntimeException(e);
+         }
 
- outputStream = socket.getOutputStream();
- ObjectOutputStream objectOutputStream = new ObjectOutputStream(outputStream);
- objectOutputStream.writeObject(data);
- objectOutputStream.flush();
-
-} catch (IOException e) {
-throw new RuntimeException(e);
+     }
+ });
+ ConnectThread.start();
+    runOnUiThread(new Runnable() {
+        @Override
+        public void run() {
+            Connect.setEnabled(false);
+        }
+    });
 }
+
+private void sendDataToSlave(HashMap data)  {
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                        if(outputStream==null){
+                            outputStream = socket.getOutputStream();
+                        objectOutputStream = new ObjectOutputStream(outputStream);}
+                        objectOutputStream.writeObject(data);
+                        objectOutputStream.flush();
+                        Log.i("master","sent");
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }).start();
 }
 
 @Override
 protected void onDestroy() {
 super.onDestroy();
 OutputStreamClose();
+inputStreamClose();
 socketClose();
+Disconnect();
 }
 
 @SuppressLint("MissingPermission")
@@ -188,6 +266,7 @@ if(Bdevice.getBondState()==BluetoothDevice.BOND_BONDED)
     try {
         Method method = Bdevice.getClass().getMethod("removeBond");
         method.invoke(Bdevice);
+        if(socket!=null)
         socket.close();
         socket = null;
     } catch (IllegalAccessException e) {
@@ -204,9 +283,12 @@ if(Bdevice.getBondState()==BluetoothDevice.BOND_BONDED)
 }
 private void OutputStreamClose()
 {
+
 if(outputStream!=null) {
     try {
+        objectOutputStream.close();
         outputStream.close();
+
     } catch (IOException e) {
         throw new RuntimeException(e);
     }
@@ -226,7 +308,9 @@ private void inputStreamClose() {
 if(inputStream!=null)
 {
 try {
+    objectInputStream.close();
 inputStream.close();
+
 
 } catch (IOException e) {
 throw new RuntimeException(e);
@@ -244,10 +328,12 @@ int[][] matrix2 = {{3,4},{5,6}};
 HashMap keyValuePair = new HashMap<>();
 keyValuePair.put("row2",matrix1[1]);
 keyValuePair.put("matrix2",matrix2);
+
+
 sendDataToSlave(keyValuePair);
 
 //compute row1 in master ..
-long start_time = System.currentTimeMillis();
+long start_time = System.nanoTime();
 for(int i=0; i<2;i++)
 {
     int sum = 0 ;
@@ -257,48 +343,50 @@ for(int i=0; i<2;i++)
     }
     result[0][i] = sum;
 }
-long end_time  = System.currentTimeMillis();
+long end_time  = System.nanoTime();
 
    Log.i("row1",DeviceHolder.ArrayToString(result));
 
-    Thread waiting = new Thread(new Runnable() {
-        @Override
-        public void run() {
-            try {
-                inputStreamClose();
-                inputStream = socket.getInputStream();
-                objectInputStream = new ObjectInputStream(inputStream);
+    exec_time = end_time - start_time;
 
-                while (inputStream.available()==0){
-                    Thread.sleep(100);
-                }
-                HashMap<String, Object> receivedKeyValuePairs = (HashMap<String, Object>) objectInputStream.readObject();
-                result[1] = (int[]) receivedKeyValuePairs.get("row2");
-                slave_exec = (long) receivedKeyValuePairs.get("slave_exe");
-
-
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            } catch (ClassNotFoundException e) {
-                throw new RuntimeException(e);
-            }
-
-        }
-    });
-    waiting.start();
-    try {
-        waiting.join();
-    } catch (InterruptedException e) {
-        throw new RuntimeException(e);
-    }
-    long exec_time = end_time - start_time;
-    MatrixResult.setText(DeviceHolder.ArrayToString(result));
-    M_exec_time.setText(exec_time+"ms");
-    S_exec_time.setText(slave_exec+"ms");
 }
+    private void writeLogToFile(String logMessage) {
+        // Get the directory for your app's private files
+        File directory = getFilesDir();
 
+// Create the file object
+        File logFile = new File(directory, device.getName()+".txt");
+        try {
+            FileWriter fileWriter = new FileWriter(logFile, true);
+            BufferedWriter bufferedWriter = new BufferedWriter(fileWriter);
+            bufferedWriter.write(logMessage);
+            bufferedWriter.newLine();
+            bufferedWriter.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
 
+    private String readLogFile() {
+        // Get the directory for your app's private files
+        File directory = getFilesDir();
+
+// Create the file object
+        File logFile = new File(directory, device.getName()+".txt");// Replace with the actual path to your log file
+
+        StringBuilder logContent = new StringBuilder();
+        try {
+            BufferedReader reader = new BufferedReader(new FileReader(logFile));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                logContent.append(line).append("\n");
+            }
+            reader.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return logContent.toString();
+    }
 
 }

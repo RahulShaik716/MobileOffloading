@@ -3,12 +3,16 @@
     android:orientation="vertical"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
+    <include
+        android:id="@+id/customToolbar"
+        layout="@layout/custom_toolbar" />
 
     <TextView
         android:id="@+id/textView"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Name:" />
+        android:text="Name:"
+        />
 
     <TextView
         android:id="@+id/textView7"
